@@ -1,0 +1,312 @@
+---
+title: "Kinship Coefficient Algorithm"
+author: "Nikola Rasevic"
+date: "13/10/2020"
+output: html_document
+---
+
+Uploading Genlib so we can check our work and plot the pedigree.
+```{r}
+#upload package
+library(GENLIB)
+```
+
+Five pedigrees were created so we can check our work. You can use any of the pedigrees here, or you can use your own. Pedigrees must be in the following format: ind, father, mother, sex.
+
+```{r}
+
+#Dataset 1: Simple Pedigree
+
+#ped_mat=rbind(c(1,0,0,1),c(2,0,0,2),c(3,1,2,2))
+#colnames(ped_mat)=c("ind","father","mother","sex")
+#ped_mat=as.data.frame(ped_mat)
+
+#Dataset 2: Intermediate Pedigree
+
+#ped_mat=rbind(c(1,0,0,1),c(2,0,0,2),c(3,1,2,2), c(4,1,2,1), c(5,0,0,1), c(6,5,3,1))
+#colnames(ped_mat)=c("ind","father","mother","sex")
+#ped_mat=as.data.frame(ped_mat)
+
+#Dataset 3: Unorganized Complicated Pedigree
+
+#ped_mat=rbind(c(1,0,0,1),c(2,0,0,2), c(12,10,9,1), c(3,1,2,2), c(4,1,2,1), c(5,0,0,1), c(6,5,3,1), c(7,0,0,2),
+#              c(8,0,0,2), c(9,4,7,2), c(10,0,0,1), c(11,6,8,2))
+#colnames(ped_mat)=c("ind","father","mother","sex")
+#ped_mat=as.data.frame(ped_mat)
+
+#Dataset 4: Simple Inbreeding Pedigree
+
+#ped_mat=rbind(c(1,0,0,1),c(2,0,0,2),c(3,1,2,2), c(4,1,2,1), c(5,4,3,1))
+#colnames(ped_mat)=c("ind","father","mother","sex")
+#ped_mat=as.data.frame(ped_mat)
+
+#Dataset 5: Complex Unorganized Inbreeding Pedigree
+
+ped_mat=rbind(c(1,0,0,1),c(2,0,0,2), c(12,10,9,1), c(3,1,2,2), c(4,1,2,1), c(5,0,0,1), c(6,5,3,1), c(7,0,0,2),
+              c(8,0,0,2), c(9,4,7,2), c(10,0,0,1), c(11,6,8,2), c(13,12,11,1))
+colnames(ped_mat)=c("ind","father","mother","sex")
+ped_mat=as.data.frame(ped_mat)
+
+ped_mat
+```
+
+Plotting the Pedigree.
+
+```{r}
+
+mygen=gen.genealogy(ped_mat)
+gen.graph(mygen)
+
+```
+
+I will be using a gene-dropping method for estimating kinship coefficients.
+
+First, I will create a function that will return a matrix with the dropped-down alleles simulated. Allele 1 is the paternal allele, and allele 2 is the maternal allele. Fill is a variable equal to 1 if the individual has their alleles defined, and 0 otherwise. The process is iterated until all indivudals have their alleles filled.
+
+```{r}
+p <- function(m){
+  m$allele1 <- c(integer(nrow(m)))#Add simulated 1st allele to each subject (Paternal allele)
+  m$allele2 <- c(integer(nrow(m)))#Add simulated 2nd allele to each subject (Maternal allele)
+  m$fill <- c(integer(nrow(m)))#Does the individual have his alleles defined?
+  father = which((m$father == 0) & (m$mother == 0) & (m$sex == 1))#determine index of father founder
+  mother = which((m$father == 0) & (m$mother == 0) & (m$sex == 2))#determine index of mother founder
+  #Filling in the alleles for the father. Fathers have odds numbers for alleles
+  for(i in 1:length(father)){
+    m$allele1[father[i]] = 1 - 4 + (4*(i))#starts at 1 and increases by increments of 4
+    m$allele2[father[i]] = 3 - 4 + (4*(i))#starts at 3 and increases by increments of 4
+  }
+  #Filling in the alleles for the mother. Mothers have even numbers for alleles
+  for(i in 1:length(mother)){
+    m$allele1[mother[i]] = 2 - 4 + (4*(i))#starts at 2 and increases by increments of 4
+    m$allele2[mother[i]] = 4 - 4 + (4*(i))#starts at 4 and increases by increments of 4
+  }  
+  m$fill[which((m$allele1 != 0) & (m$allele2 != 0))] <- TRUE#Are the individual's alleles defined?
+  
+  
+  #################################while loop would start here####################################
+  while ((0 %in% m$fill) == TRUE){
+    #& (m$fill[m$ind %in% m$father]==1)
+    #& (m$fill[m$ind %in% m$mother]==1)
+    
+    #index of children who have fathers
+    fatchild <- which((m$father %in% m$ind) & (m$fill == 0))
+    #index of children whose have mothers
+    motchild <- which((m$mother %in% m$ind) & (m$fill == 0))
+    #fill in the father alleles of the children
+    for(i in 1:length(fatchild)){
+      rand <- sample(1:2, 1)#generate a random number for meiosis
+      if(rand == 1){
+        m$allele1[fatchild[i]] = m$allele1[which(m$ind == m$father[fatchild[i]])]
+      }
+      else{
+        m$allele1[fatchild[i]] = m$allele2[which(m$ind == m$father[fatchild[i]])]
+      }
+    }
+    #fill in the mother alleles of the children
+    for(i in 1:length(motchild)){
+      rand <- sample(1:2, 1)#generate a random number for meiosis
+      if(rand == 1){
+        m$allele2[motchild[i]] = m$allele1[which(m$ind == m$mother[motchild[i]])]
+      }
+      else{
+        m$allele2[motchild[i]] = m$allele2[which(m$ind == m$mother[motchild[i]])]
+      }
+    } 
+    
+    m$fill[which((m$allele1 != 0) & (m$allele2 != 0))] <- TRUE
+  }
+  #############while loop ends here################
+  return(m)
+}
+
+p(ped_mat)
+```
+
+Next, I will create a function that will simulate the p(m) function and create distributions of alleles per individual. m is the pedigree dataframe, n is the number of simulations, x and y are the individuals for which you would like to view the kinship coefficient. If you want to see the matrix created for the calculation of kinship, select mat = TRUE. Default is FALSE. A n x 5 data frame is computed (all_mat). The columns represent ind x's paternal alleles, ind x's maternal alleles, ind y's paternal alleles, ind y's maternal alleles and whether a random selection of an allele from each individual matches.This is called the matching dataframe. Kinship is then calculated using the last column: # of matches/n.
+
+```{r}
+
+sim <- function(m,n,x,y,mat=FALSE){
+  #xall1 and xall2 are all the simulated paternal and maternal alleles of individal x.
+  #yall1 and yall2 are all the simulated paternal and maternal alleles of individal y.
+  xall1 <- c(integer(n))
+  xall2 <- c(integer(n))
+  yall1 <- c(integer(n))
+  yall2 <- c(integer(n))
+  for(i in 1:n){
+    df <- p(m)
+    xall1[i] <- df[which(df$ind == x), "allele1"]
+    xall2[i] <- df[which(df$ind == x), "allele2"]
+    yall1[i] <- df[which(df$ind == y), "allele1"]
+    yall2[i] <- df[which(df$ind == y), "allele2"]
+  }
+  #Creating a dataframe of xall1, xall2, yall1 and yall2
+  all_mat <- cbind(xall1, xall2, yall1, yall2)
+  all_mat = as.data.frame(all_mat)
+  colnames(all_mat)=c(paste(c(x,"'s paternal alleles"), collapse = ""),
+                      paste(c(x,"'s maternal alleles"), collapse = ""),
+                      paste(c(y,"'s paternal alleles"), collapse = ""),
+                      paste(c(y,"'s maternal alleles"), collapse = ""))
+  #Matrix that will tell us if there is a match for each simulation.
+  all_mat$match <- c(integer(n))
+  #Randomly selecting an allele from each individual and seeing if the match.
+  for(i in 1:n){
+    rand1 <- sample(1:2, 1)
+    rand2 <- sample(3:4, 1)
+    #determining if there is  match
+    if(all_mat[i, rand1] == all_mat[i, rand2]){
+      all_mat$match[i] = 1
+    }
+  }
+  kin <- sum(all_mat$match)/nrow(all_mat)#Kinship is calculated by dividing # of matches by number of simulations.
+  if(mat == TRUE){
+    return(list(kin, all_mat))
+  }
+  else{
+    return(kin)
+  }
+}
+```
+
+Computing the kinship coefficient of indiviudals 3 and 4 of the last matrix, using 100 simulations. 
+
+```{r}
+sim(ped_mat, 100, 1, 3, mat=TRUE)
+```
+
+Installing a package to compute MSE.
+```{r}
+install.packages("Metrics")
+library(Metrics)
+```
+
+Creating a function to check the accuracy and time of the estimate for the last pedigee for n = 10, 50, 100, 150, 200 and 250.
+
+```{r}
+
+
+eval <- function(x,y){
+  
+  val = 100
+  n = c(10,50,100,150,200,250)
+  accuracy = numeric(length(n))
+  time = numeric(length(n))
+  est = numeric(val)
+  #individuals
+  
+  
+  #n = 10
+  
+  for (i in 1:val){
+    est[i] = sim(ped_mat, n[1], x, y)
+  }
+  
+  kinship=gen.phi(mygen,pro=c(x,y))
+  kin = rep(kinship[1,2], val)
+  
+  accuracy[1] = mse(kin, est)
+  time[1] = system.time(sim(ped_mat, n[1], x, y))[3]#measuring time elapsed
+  
+  #n = 50
+  
+  for (i in 1:val){
+    est[i] = sim(ped_mat, n[2], x, y)
+  }
+  
+  kinship=gen.phi(mygen,pro=c(x,y))
+  kin = rep(kinship[1,2], val)
+  
+  accuracy[2] = mse(kin, est)
+  time[2] = system.time(sim(ped_mat, n[2], x, y))[3]#measuring time elapsed
+  
+  #n = 100
+  
+  for (i in 1:val){
+    est[i] = sim(ped_mat, n[3], x, y)
+  }
+  
+  kinship=gen.phi(mygen,pro=c(x,y))
+  kin = rep(kinship[1,2], val)
+  
+  accuracy[3] = mse(kin, est)
+  time[3] = system.time(sim(ped_mat, n[3], x, y))[3]#measuring time elapsed
+  
+  #n = 150
+  
+  for (i in 1:val){
+    est[i] = sim(ped_mat, n[4], x, y)
+  }
+  
+  kinship=gen.phi(mygen,pro=c(x,y))
+  kin = rep(kinship[1,2], val)
+  
+  accuracy[4] = mse(kin, est)
+  time[4] = system.time(sim(ped_mat, n[4], x, y))[3]#measuring time elapsed
+  
+  #n = 200
+  
+  for (i in 1:val){
+    est[i] = sim(ped_mat, n[5], x, y)
+  }
+  
+  kinship=gen.phi(mygen,pro=c(x,y))
+  kin = rep(kinship[1,2], val)
+  
+  accuracy[5] = mse(kin, est)
+  time[5] = system.time(sim(ped_mat, n[5], x, y))[3]#measuring time elapsed
+  
+  #n = 250
+  
+  for (i in 1:val){
+    est[i] = sim(ped_mat, n[6], x, y)
+  }
+  
+  kinship=gen.phi(mygen,pro=c(x,y))
+  kin = rep(kinship[1,2], val)
+  
+  accuracy[6] = mse(kin, est)
+  time[6] = system.time(sim(ped_mat, n[6], x, y))[3]#measuring time elapsed
+  df = data.frame(n, time, accuracy)
+  return(df)
+}
+
+```
+
+
+Evaluation of algorithms for individuals 1 and 3, 1 and 6, and 1 and 11.
+```{r}
+eval13 = eval(1,3)
+eval16 = eval(1,6)
+eval111 = eval(1,11)
+```
+
+Installing and opening ggplot2.
+```{r}
+install.packages("ggplot2")
+library(ggplot2)
+```
+
+Plotting the MSE, Time and Simulations.
+```{r}
+n = c(eval13$n, eval16$n, eval111$n)
+time = c(eval13$time, eval16$time, eval111$time)
+accuracy  = c(eval13$accuracy, eval16$accuracy, eval111$accuracy)
+relation = c(rep(("Parent-Child"), 6), rep(("GrandParent-GrandChild"), 6), rep(("GreatGrandParent-GreatGrandChild"), 6))
+df = data.frame(n, time, accuracy, relation)
+colnames(df) <- c("Simulations","Time", "MSE", "Relation")
+ggplot(df, aes(x=Simulations, y=Time, color = Relation)) + geom_line(size = 1) + geom_point(size = 2)
+ggplot(df, aes(x=Simulations, y=MSE, color = Relation)) + geom_line(size = 1) + geom_point(size = 2)
+ggplot(df, aes(x=Time, y=MSE, color = Relation)) + geom_line(size = 1) + geom_point(size = 2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
